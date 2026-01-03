@@ -244,15 +244,20 @@
         // ==================== Supabase Database Functions ====================
         
         // Routines CRUD
-        async function getRoutines() {
+        async function getRoutines(forceRefresh = false) {
             try {
-                const { data, error } = await supabase
-                    .from('routine_masters')
-                    .select('*')
-                    .order('display_order', { ascending: true });
+                // Force refresh or if cache is empty
+                if (forceRefresh || routinesCache.length === 0) {
+                    const { data, error } = await supabase
+                        .from('routine_masters')
+                        .select('*')
+                        .order('display_order', { ascending: true });
+                    
+                    if (error) throw error;
+                    routinesCache = data || [];
+                    return routinesCache;
+                }
                 
-                if (error) throw error;
-                routinesCache = data || [];
                 return routinesCache;
             } catch (error) {
                 console.error('Error fetching routines:', error);
@@ -275,6 +280,10 @@
                     .select();
                 
                 if (error) throw error;
+                
+                // Clear cache to force refresh
+                routinesCache = [];
+                
                 hideLoading();
                 return data;
             } catch (error) {
@@ -295,6 +304,10 @@
                     .select();
                 
                 if (error) throw error;
+                
+                // Clear cache to force refresh
+                routinesCache = [];
+                
                 hideLoading();
                 return data;
             } catch (error) {
@@ -314,6 +327,10 @@
                     .eq('id', id);
                 
                 if (error) throw error;
+                
+                // Clear cache to force refresh
+                routinesCache = [];
+                
                 hideLoading();
                 return true;
             } catch (error) {
@@ -335,6 +352,10 @@
                 );
                 
                 await Promise.all(updates);
+                
+                // Clear cache to force refresh
+                routinesCache = [];
+                
                 hideLoading();
                 return true;
             } catch (error) {
@@ -345,22 +366,29 @@
         }
 
         // Daily Logs CRUD
-        async function getDailyLogs() {
+        async function getDailyLogs(forceRefresh = false) {
             try {
-                const { data, error } = await supabase
-                    .from('daily_logs')
-                    .select('*')
-                    .order('date', { ascending: true });
+                // Force refresh or if cache is empty
+                if (forceRefresh || Object.keys(dailyLogsCache).length === 0) {
+                    const { data, error } = await supabase
+                        .from('daily_logs')
+                        .select('*')
+                        .order('date', { ascending: true });
+                    
+                    if (error) throw error;
+                    
+                    // Convert array to object keyed by date
+                    const logsObject = {};
+                    if (data) {
+                        data.forEach(log => {
+                            logsObject[log.date] = log;
+                        });
+                    }
+                    dailyLogsCache = logsObject;
+                    return logsObject;
+                }
                 
-                if (error) throw error;
-                
-                // Convert array to object keyed by date
-                const logsObject = {};
-                data.forEach(log => {
-                    logsObject[log.date] = log;
-                });
-                dailyLogsCache = logsObject;
-                return logsObject;
+                return dailyLogsCache;
             } catch (error) {
                 console.error('Error fetching daily logs:', error);
                 return {};
@@ -423,6 +451,10 @@
                     .select();
                 
                 if (error) throw error;
+                
+                // Clear cache to force refresh on next fetch
+                dailyLogsCache = {};
+                
                 return data;
             } catch (error) {
                 console.error('Error updating today log:', error);
@@ -466,13 +498,22 @@
         }
 
         async function renderRoutineList() {
-            const routines = await getRoutines();
+            // Always fetch fresh data from database
+            const routines = await getRoutines(true);
             const todayLog = await getTodayLog();
-            const completedIds = todayLog?.completed_task_ids || [];
+            
+            // Ensure completed_task_ids is always an array
+            let completedIds = [];
+            if (todayLog && todayLog.completed_task_ids) {
+                completedIds = Array.isArray(todayLog.completed_task_ids) 
+                    ? todayLog.completed_task_ids 
+                    : [];
+            }
             
             const container = document.getElementById('routineList');
             container.innerHTML = '';
 
+            // Filter out completed tasks
             routines.forEach(routine => {
                 if (!completedIds.includes(routine.id)) {
                     const item = document.createElement('div');
@@ -502,15 +543,19 @@
             // Remove task with animation
             taskElement.classList.add('removing');
             
-            setTimeout(async () => {
-                overlay.classList.add('hidden');
-                taskElement.remove();
-                
-                // Update log
-                const todayLog = await getTodayLog();
-                const completedIds = todayLog?.completed_task_ids || [];
+            // Update log immediately before animation completes
+            const todayLog = await getTodayLog();
+            const completedIds = todayLog?.completed_task_ids || [];
+            
+            // Only add if not already in the list
+            if (!completedIds.includes(taskId)) {
                 completedIds.push(taskId);
                 await updateTodayLog(completedIds);
+            }
+            
+            setTimeout(() => {
+                overlay.classList.add('hidden');
+                taskElement.remove();
             }, 1000);
         }
 
@@ -652,18 +697,36 @@
 
         async function renderChart(period = 'weekly') {
             currentPeriod = period;
-            const logs = await getDailyLogs();
+            
+            // Force refresh data from database
+            const logs = await getDailyLogs(true);
             const dates = Object.keys(logs).sort();
             
-            let filteredDates = dates;
+            // Ensure today's log is included
+            const today = getTodayKey();
+            if (!dates.includes(today)) {
+                await getTodayLog(); // This will create today's log if it doesn't exist
+                // Re-fetch logs after creating today's log
+                const updatedLogs = await getDailyLogs();
+                Object.assign(logs, updatedLogs);
+            }
+            
+            const allDates = Object.keys(logs).sort();
+            
+            let filteredDates = allDates;
             if (period === 'weekly') {
-                filteredDates = dates.slice(-7);
+                filteredDates = allDates.slice(-7);
             } else {
-                filteredDates = dates.slice(-365);
+                filteredDates = allDates.slice(-365);
+            }
+            
+            // If no dates exist, show at least today
+            if (filteredDates.length === 0) {
+                filteredDates = [today];
             }
             
             const labels = filteredDates.map(date => {
-                const d = new Date(date);
+                const d = new Date(date + 'T00:00:00');
                 return `${d.getMonth() + 1}/${d.getDate()}`;
             });
             
@@ -721,7 +784,18 @@
         }
 
         async function renderAchievementRate() {
-            const logs = await getDailyLogs();
+            // Force refresh data from database
+            const logs = await getDailyLogs(true);
+            
+            // Ensure today's log is included
+            const today = getTodayKey();
+            if (!logs[today]) {
+                await getTodayLog(); // This will create today's log if it doesn't exist
+                // Re-fetch logs after creating today's log
+                const updatedLogs = await getDailyLogs();
+                Object.assign(logs, updatedLogs);
+            }
+            
             const dates = Object.keys(logs).sort().slice(-7);
             
             let totalDone = 0;
@@ -729,8 +803,10 @@
             
             dates.forEach(date => {
                 const log = logs[date];
-                totalDone += log.done_count || 0;
-                totalRoutines += log.total_routine_count || 0;
+                if (log) {
+                    totalDone += log.done_count || 0;
+                    totalRoutines += log.total_routine_count || 0;
+                }
             });
             
             const rate = totalRoutines > 0 ? (totalDone / totalRoutines * 100).toFixed(1) : 0;
