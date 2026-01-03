@@ -6,6 +6,7 @@
     <title>My ROUTINE</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <script src="https://unpkg.com/@supabase/supabase-js@2.39.3/dist/umd/supabase.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
         
@@ -89,11 +90,21 @@
         .drag-over {
             border-top: 2px solid #dc2626;
         }
+
+        .loading {
+            opacity: 0.5;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body class="bg-black text-white min-h-screen">
     <!-- Done Overlay -->
     <div id="doneOverlay" class="done-overlay hidden">Done!</div>
+
+    <!-- Loading Indicator -->
+    <div id="loadingIndicator" class="fixed top-4 right-4 bg-red-600 text-white px-4 py-2 rounded hidden">
+        Loading...
+    </div>
 
     <!-- Main Container -->
     <div class="max-w-4xl mx-auto px-4 py-8 pb-24">
@@ -178,11 +189,15 @@
     </footer>
 
     <script>
-        // ==================== Data Management ====================
-        const STORAGE_KEYS = {
-            ROUTINES: 'my_routine_masters',
-            DAILY_LOGS: 'my_routine_daily_logs'
-        };
+        // ==================== Supabase Configuration ====================
+        const SUPABASE_URL = 'https://xfwxicaglljcvdfeefcd.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhmd3hpY2FnbGxqY3ZkZmVlZmNkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjczODg0NTMsImV4cCI6MjA4Mjk2NDQ1M30.FZpvA4uV4EgmFxOooDBJo_l8YSRcBV0BveDJ2WItVek';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        // ==================== Global State ====================
+        let routinesCache = [];
+        let dailyLogsCache = {};
 
         // Motivational Quotes
         const QUOTES = [
@@ -213,71 +228,225 @@
             }
         ];
 
-        // Initialize with mock data if empty
-        function initializeMockData() {
-            const routines = getRoutines();
-            if (routines.length === 0) {
-                const mockRoutines = [
-                    { id: Date.now() + 1, title: "朝のストレッチ", display_order: 1, created_at: new Date().toISOString() },
-                    { id: Date.now() + 2, title: "コーヒーを飲む", display_order: 2, created_at: new Date().toISOString() },
-                    { id: Date.now() + 3, title: "ニュースをチェック", display_order: 3, created_at: new Date().toISOString() },
-                    { id: Date.now() + 4, title: "コードレビュー", display_order: 4, created_at: new Date().toISOString() },
-                    { id: Date.now() + 5, title: "筋トレ", display_order: 5, created_at: new Date().toISOString() },
-                    { id: Date.now() + 6, title: "読書", display_order: 6, created_at: new Date().toISOString() }
-                ];
-                saveRoutines(mockRoutines);
-            }
+        // ==================== Utility Functions ====================
+        function showLoading() {
+            document.getElementById('loadingIndicator').classList.remove('hidden');
         }
 
-        // LocalStorage helpers
-        function getRoutines() {
-            const data = localStorage.getItem(STORAGE_KEYS.ROUTINES);
-            return data ? JSON.parse(data) : [];
-        }
-
-        function saveRoutines(routines) {
-            localStorage.setItem(STORAGE_KEYS.ROUTINES, JSON.stringify(routines));
-        }
-
-        function getDailyLogs() {
-            const data = localStorage.getItem(STORAGE_KEYS.DAILY_LOGS);
-            return data ? JSON.parse(data) : {};
-        }
-
-        function saveDailyLogs(logs) {
-            localStorage.setItem(STORAGE_KEYS.DAILY_LOGS, JSON.stringify(logs));
+        function hideLoading() {
+            document.getElementById('loadingIndicator').classList.add('hidden');
         }
 
         function getTodayKey() {
             return new Date().toISOString().split('T')[0];
         }
 
-        function getTodayLog() {
-            const logs = getDailyLogs();
-            const today = getTodayKey();
-            if (!logs[today]) {
-                logs[today] = {
-                    date: today,
-                    done_count: 0,
-                    total_routine_count: getRoutines().length,
-                    completed_task_ids: []
-                };
-                saveDailyLogs(logs);
+        // ==================== Supabase Database Functions ====================
+        
+        // Routines CRUD
+        async function getRoutines() {
+            try {
+                const { data, error } = await supabase
+                    .from('routine_masters')
+                    .select('*')
+                    .order('display_order', { ascending: true });
+                
+                if (error) throw error;
+                routinesCache = data || [];
+                return routinesCache;
+            } catch (error) {
+                console.error('Error fetching routines:', error);
+                return [];
             }
-            return logs[today];
         }
 
-        function updateTodayLog(completedIds) {
-            const logs = getDailyLogs();
-            const today = getTodayKey();
-            const routines = getRoutines();
-            logs[today] = {
-                date: today,
-                done_count: completedIds.length,
-                total_routine_count: routines.length,
-                completed_task_ids: completedIds
-            };
-            saveDailyLogs(logs);
+        async function addRoutine(title, displayOrder) {
+            try {
+                showLoading();
+                const { data, error } = await supabase
+                    .from('routine_masters')
+                    .insert([
+                        { 
+                            title: title, 
+                            display_order: displayOrder,
+                            created_at: new Date().toISOString()
+                        }
+                    ])
+                    .select();
+                
+                if (error) throw error;
+                hideLoading();
+                return data;
+            } catch (error) {
+                console.error('Error adding routine:', error);
+                hideLoading();
+                alert('ルーチンの追加に失敗しました');
+                return null;
+            }
+        }
+
+        async function updateRoutine(id, updates) {
+            try {
+                showLoading();
+                const { data, error } = await supabase
+                    .from('routine_masters')
+                    .update(updates)
+                    .eq('id', id)
+                    .select();
+                
+                if (error) throw error;
+                hideLoading();
+                return data;
+            } catch (error) {
+                console.error('Error updating routine:', error);
+                hideLoading();
+                alert('ルーチンの更新に失敗しました');
+                return null;
+            }
+        }
+
+        async function deleteRoutine(id) {
+            try {
+                showLoading();
+                const { error } = await supabase
+                    .from('routine_masters')
+                    .delete()
+                    .eq('id', id);
+                
+                if (error) throw error;
+                hideLoading();
+                return true;
+            } catch (error) {
+                console.error('Error deleting routine:', error);
+                hideLoading();
+                alert('ルーチンの削除に失敗しました');
+                return false;
+            }
+        }
+
+        async function updateRoutineOrders(routines) {
+            try {
+                showLoading();
+                const updates = routines.map((routine, index) => 
+                    supabase
+                        .from('routine_masters')
+                        .update({ display_order: index + 1 })
+                        .eq('id', routine.id)
+                );
+                
+                await Promise.all(updates);
+                hideLoading();
+                return true;
+            } catch (error) {
+                console.error('Error updating routine orders:', error);
+                hideLoading();
+                return false;
+            }
+        }
+
+        // Daily Logs CRUD
+        async function getDailyLogs() {
+            try {
+                const { data, error } = await supabase
+                    .from('daily_logs')
+                    .select('*')
+                    .order('date', { ascending: true });
+                
+                if (error) throw error;
+                
+                // Convert array to object keyed by date
+                const logsObject = {};
+                data.forEach(log => {
+                    logsObject[log.date] = log;
+                });
+                dailyLogsCache = logsObject;
+                return logsObject;
+            } catch (error) {
+                console.error('Error fetching daily logs:', error);
+                return {};
+            }
+        }
+
+        async function getTodayLog() {
+            try {
+                const today = getTodayKey();
+                const { data, error } = await supabase
+                    .from('daily_logs')
+                    .select('*')
+                    .eq('date', today)
+                    .single();
+                
+                if (error && error.code !== 'PGRST116') throw error;
+                
+                // If no log exists for today, create one
+                if (!data) {
+                    const routines = await getRoutines();
+                    const newLog = {
+                        date: today,
+                        done_count: 0,
+                        total_routine_count: routines.length,
+                        completed_task_ids: []
+                    };
+                    
+                    const { data: insertedData, error: insertError } = await supabase
+                        .from('daily_logs')
+                        .insert([newLog])
+                        .select()
+                        .single();
+                    
+                    if (insertError) throw insertError;
+                    return insertedData;
+                }
+                
+                return data;
+            } catch (error) {
+                console.error('Error getting today log:', error);
+                return null;
+            }
+        }
+
+        async function updateTodayLog(completedIds) {
+            try {
+                const today = getTodayKey();
+                const routines = await getRoutines();
+                
+                const { data, error } = await supabase
+                    .from('daily_logs')
+                    .upsert([
+                        {
+                            date: today,
+                            done_count: completedIds.length,
+                            total_routine_count: routines.length,
+                            completed_task_ids: completedIds
+                        }
+                    ], { onConflict: 'date' })
+                    .select();
+                
+                if (error) throw error;
+                return data;
+            } catch (error) {
+                console.error('Error updating today log:', error);
+                return null;
+            }
+        }
+
+        // Initialize with mock data
+        async function initializeMockData() {
+            const routines = await getRoutines();
+            if (routines.length === 0) {
+                const mockRoutines = [
+                    { title: "朝のストレッチ", display_order: 1 },
+                    { title: "コーヒーを飲む", display_order: 2 },
+                    { title: "ニュースをチェック", display_order: 3 },
+                    { title: "コードレビュー", display_order: 4 },
+                    { title: "筋トレ", display_order: 5 },
+                    { title: "読書", display_order: 6 }
+                ];
+                
+                for (const routine of mockRoutines) {
+                    await addRoutine(routine.title, routine.display_order);
+                }
+            }
         }
 
         // ==================== UI Rendering ====================
@@ -296,10 +465,10 @@
             document.getElementById('quoteAuthor').textContent = `- ${quote.author}`;
         }
 
-        function renderRoutineList() {
-            const routines = getRoutines().sort((a, b) => a.display_order - b.display_order);
-            const todayLog = getTodayLog();
-            const completedIds = todayLog.completed_task_ids || [];
+        async function renderRoutineList() {
+            const routines = await getRoutines();
+            const todayLog = await getTodayLog();
+            const completedIds = todayLog?.completed_task_ids || [];
             
             const container = document.getElementById('routineList');
             container.innerHTML = '';
@@ -322,7 +491,7 @@
             });
         }
 
-        function handleTaskComplete(e) {
+        async function handleTaskComplete(e) {
             const taskId = parseInt(e.target.dataset.id);
             const taskElement = e.target.closest('.task-item');
             
@@ -333,20 +502,20 @@
             // Remove task with animation
             taskElement.classList.add('removing');
             
-            setTimeout(() => {
+            setTimeout(async () => {
                 overlay.classList.add('hidden');
                 taskElement.remove();
                 
                 // Update log
-                const todayLog = getTodayLog();
-                const completedIds = todayLog.completed_task_ids || [];
+                const todayLog = await getTodayLog();
+                const completedIds = todayLog?.completed_task_ids || [];
                 completedIds.push(taskId);
-                updateTodayLog(completedIds);
+                await updateTodayLog(completedIds);
             }, 1000);
         }
 
-        function renderRoutineMasterList() {
-            const routines = getRoutines().sort((a, b) => a.display_order - b.display_order);
+        async function renderRoutineMasterList() {
+            const routines = await getRoutines();
             const container = document.getElementById('routineMasterList');
             container.innerHTML = '';
 
@@ -406,23 +575,24 @@
             e.preventDefault();
         }
 
-        function handleDragEnd(e) {
+        async function handleDragEnd(e) {
             e.currentTarget.classList.remove('dragging');
             
             // Update display order
             const cards = Array.from(document.querySelectorAll('#routineMasterList > div'));
-            const routines = getRoutines();
+            const routines = await getRoutines();
             
-            cards.forEach((card, index) => {
+            const updatedRoutines = cards.map((card, index) => {
                 const id = parseInt(card.dataset.id);
                 const routine = routines.find(r => r.id === id);
                 if (routine) {
                     routine.display_order = index + 1;
                 }
-            });
+                return routine;
+            }).filter(r => r);
             
-            saveRoutines(routines);
-            renderRoutineList();
+            await updateRoutineOrders(updatedRoutines);
+            await renderRoutineList();
         }
 
         function getDragAfterElement(container, y) {
@@ -440,53 +610,38 @@
             }, { offset: Number.NEGATIVE_INFINITY }).element;
         }
 
-        function handleEditRoutine(e) {
+        async function handleEditRoutine(e) {
             const id = parseInt(e.target.dataset.id);
             const input = document.querySelector(`.edit-routine-input[data-id="${id}"]`);
             const newTitle = input.value.trim();
             
             if (newTitle) {
-                const routines = getRoutines();
-                const routine = routines.find(r => r.id === id);
-                if (routine) {
-                    routine.title = newTitle;
-                    saveRoutines(routines);
-                    renderRoutineList();
-                    alert('更新しました');
-                }
+                await updateRoutine(id, { title: newTitle });
+                await renderRoutineList();
+                alert('更新しました');
             }
         }
 
-        function handleDeleteRoutine(e) {
+        async function handleDeleteRoutine(e) {
             if (confirm('本当に削除しますか?')) {
                 const id = parseInt(e.target.dataset.id);
-                let routines = getRoutines();
-                routines = routines.filter(r => r.id !== id);
-                saveRoutines(routines);
-                renderRoutineMasterList();
-                renderRoutineList();
+                await deleteRoutine(id);
+                await renderRoutineMasterList();
+                await renderRoutineList();
             }
         }
 
-        function handleAddRoutine() {
+        async function handleAddRoutine() {
             const input = document.getElementById('newRoutineInput');
             const title = input.value.trim();
             
             if (title) {
-                const routines = getRoutines();
+                const routines = await getRoutines();
                 const maxOrder = routines.length > 0 ? Math.max(...routines.map(r => r.display_order)) : 0;
                 
-                const newRoutine = {
-                    id: Date.now(),
-                    title: title,
-                    display_order: maxOrder + 1,
-                    created_at: new Date().toISOString()
-                };
-                
-                routines.push(newRoutine);
-                saveRoutines(routines);
-                renderRoutineMasterList();
-                renderRoutineList();
+                await addRoutine(title, maxOrder + 1);
+                await renderRoutineMasterList();
+                await renderRoutineList();
                 input.value = '';
             }
         }
@@ -495,9 +650,9 @@
         let chart = null;
         let currentPeriod = 'weekly';
 
-        function renderChart(period = 'weekly') {
+        async function renderChart(period = 'weekly') {
             currentPeriod = period;
-            const logs = getDailyLogs();
+            const logs = await getDailyLogs();
             const dates = Object.keys(logs).sort();
             
             let filteredDates = dates;
@@ -565,8 +720,8 @@
             });
         }
 
-        function renderAchievementRate() {
-            const logs = getDailyLogs();
+        async function renderAchievementRate() {
+            const logs = await getDailyLogs();
             const dates = Object.keys(logs).sort().slice(-7);
             
             let totalDone = 0;
@@ -583,7 +738,7 @@
         }
 
         // ==================== Page Navigation ====================
-        function showPage(pageName) {
+        async function showPage(pageName) {
             document.getElementById('homePage').classList.add('hidden');
             document.getElementById('analystPage').classList.add('hidden');
             
@@ -596,40 +751,42 @@
                 document.getElementById('homePage').classList.remove('hidden');
                 document.getElementById('homeTab').classList.add('border-red-600');
                 document.getElementById('homeTab').classList.remove('border-transparent');
-                renderRoutineList();
+                await renderRoutineList();
             } else if (pageName === 'analyst') {
                 document.getElementById('analystPage').classList.remove('hidden');
                 document.getElementById('analystTab').classList.add('border-red-600');
                 document.getElementById('analystTab').classList.remove('border-transparent');
-                renderChart(currentPeriod);
-                renderAchievementRate();
-                renderRoutineMasterList();
+                await renderChart(currentPeriod);
+                await renderAchievementRate();
+                await renderRoutineMasterList();
             }
         }
 
         // ==================== Initialization ====================
-        document.addEventListener('DOMContentLoaded', () => {
-            initializeMockData();
+        document.addEventListener('DOMContentLoaded', async () => {
+            showLoading();
+            await initializeMockData();
             renderDate();
             renderQuote();
-            renderRoutineList();
+            await renderRoutineList();
+            hideLoading();
             
             // Event listeners
             document.getElementById('homeTab').addEventListener('click', () => showPage('home'));
             document.getElementById('analystTab').addEventListener('click', () => showPage('analyst'));
-            document.getElementById('weeklyBtn').addEventListener('click', () => {
+            document.getElementById('weeklyBtn').addEventListener('click', async () => {
                 document.getElementById('weeklyBtn').classList.add('border-red-600', 'bg-red-600/10');
                 document.getElementById('weeklyBtn').classList.remove('border-gray-600');
                 document.getElementById('yearlyBtn').classList.remove('border-red-600', 'bg-red-600/10');
                 document.getElementById('yearlyBtn').classList.add('border-gray-600');
-                renderChart('weekly');
+                await renderChart('weekly');
             });
-            document.getElementById('yearlyBtn').addEventListener('click', () => {
+            document.getElementById('yearlyBtn').addEventListener('click', async () => {
                 document.getElementById('yearlyBtn').classList.add('border-red-600', 'bg-red-600/10');
                 document.getElementById('yearlyBtn').classList.remove('border-gray-600');
                 document.getElementById('weeklyBtn').classList.remove('border-red-600', 'bg-red-600/10');
                 document.getElementById('weeklyBtn').classList.add('border-gray-600');
-                renderChart('yearly');
+                await renderChart('yearly');
             });
             document.getElementById('addRoutineBtn').addEventListener('click', handleAddRoutine);
             document.getElementById('newRoutineInput').addEventListener('keypress', (e) => {
