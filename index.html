@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My ROUTINE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+        
+        .gradient-red {
+            background: linear-gradient(to right, #dc2626, transparent);
+        }
+        
+        .gradient-text-red {
+            background: linear-gradient(to right, #dc2626, #ef4444);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .mono-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .quote-block {
+            background: #1a1a1a;
+            border-left: 3px solid #dc2626;
+        }
+        
+        .checkbox-custom {
+            width: 24px;
+            height: 24px;
+            border: 2px solid #dc2626;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .checkbox-custom:hover {
+            background: rgba(220, 38, 38, 0.1);
+        }
+        
+        .done-overlay {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 5rem;
+            font-weight: bold;
+            color: #dc2626;
+            animation: doneAnimation 1s ease-out;
+            pointer-events: none;
+            z-index: 9999;
+        }
+        
+        @keyframes doneAnimation {
+            0% {
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(0.5);
+            }
+            50% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1.2);
+            }
+            100% {
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(1);
+            }
+        }
+        
+        .task-item {
+            transition: all 0.3s ease-out;
+        }
+        
+        .task-item.removing {
+            opacity: 0;
+            transform: translateX(-100%);
+        }
+        
+        .dragging {
+            opacity: 0.5;
+        }
+        
+        .drag-over {
+            border-top: 2px solid #dc2626;
+        }
+    </style>
+</head>
+<body class="bg-black text-white min-h-screen">
+    <!-- Done Overlay -->
+    <div id="doneOverlay" class="done-overlay hidden">Done!</div>
+
+    <!-- Main Container -->
+    <div class="max-w-4xl mx-auto px-4 py-8 pb-24">
+        <!-- HOME Page -->
+        <div id="homePage" class="page">
+            <!-- Header -->
+            <header class="mb-8">
+                <h1 id="currentDate" class="text-5xl font-bold mb-6"></h1>
+                <div class="quote-block p-6 rounded-lg mono-font">
+                    <p id="quoteText" class="text-lg mb-2"></p>
+                    <p id="quoteTranslation" class="text-sm text-gray-400 mb-4"></p>
+                    <p id="quoteAuthor" class="text-right text-sm text-red-600"></p>
+                </div>
+            </header>
+
+            <!-- Daily Routine List -->
+            <main>
+                <h2 class="text-2xl font-bold mb-4 gradient-text-red">Today's Routine</h2>
+                <div id="routineList" class="space-y-4">
+                    <!-- Tasks will be inserted here -->
+                </div>
+            </main>
+        </div>
+
+        <!-- Analyst Page -->
+        <div id="analystPage" class="page hidden">
+            <!-- Performance Analytics -->
+            <section class="mb-12">
+                <h2 class="text-3xl font-bold mb-6 gradient-text-red">Performance Analytics</h2>
+                
+                <!-- Period Toggle -->
+                <div class="flex gap-4 mb-6">
+                    <button id="weeklyBtn" class="px-6 py-2 border border-red-600 rounded hover:bg-red-600/10 transition">Weekly</button>
+                    <button id="yearlyBtn" class="px-6 py-2 border border-gray-600 rounded hover:bg-gray-600/10 transition">Yearly</button>
+                </div>
+
+                <!-- Chart -->
+                <div class="bg-zinc-900 p-6 rounded-lg mb-6">
+                    <canvas id="performanceChart"></canvas>
+                </div>
+
+                <!-- Achievement Rate -->
+                <div class="bg-zinc-900 p-6 rounded-lg">
+                    <h3 class="text-xl mb-2">直近1週間の達成率</h3>
+                    <p id="achievementRate" class="text-5xl font-bold gradient-text-red"></p>
+                </div>
+            </section>
+
+            <!-- Routine Master Management -->
+            <section>
+                <h2 class="text-3xl font-bold mb-6 gradient-text-red">Routine Master Management</h2>
+                
+                <!-- Add New Routine -->
+                <div class="mb-6 flex gap-2">
+                    <input 
+                        id="newRoutineInput" 
+                        type="text" 
+                        placeholder="新しいルーチンを追加..." 
+                        class="flex-1 bg-zinc-900 border border-gray-700 rounded px-4 py-2 focus:outline-none focus:border-red-600"
+                    >
+                    <button id="addRoutineBtn" class="px-6 py-2 bg-red-600 rounded hover:bg-red-700 transition">追加</button>
+                </div>
+
+                <!-- Routine Cards -->
+                <div id="routineMasterList" class="space-y-3">
+                    <!-- Master routines will be inserted here -->
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- Footer Navigation -->
+    <footer class="fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-gray-800">
+        <div class="max-w-4xl mx-auto flex">
+            <button id="homeTab" class="flex-1 py-4 text-center font-bold transition border-t-2 border-red-600">
+                HOME
+            </button>
+            <button id="analystTab" class="flex-1 py-4 text-center font-bold transition border-t-2 border-transparent hover:border-gray-600">
+                ANALYST
+            </button>
+        </div>
+    </footer>
+
+    <script>
+        // ==================== Data Management ====================
+        const STORAGE_KEYS = {
+            ROUTINES: 'my_routine_masters',
+            DAILY_LOGS: 'my_routine_daily_logs'
+        };
+
+        // Motivational Quotes
+        const QUOTES = [
+            {
+                text: "The only way to do great work is to love what you do.",
+                translation: "偉大な仕事をする唯一の方法は、自分のやっていることを愛することだ。",
+                author: "Steve Jobs"
+            },
+            {
+                text: "Success is not final, failure is not fatal: it is the courage to continue that counts.",
+                translation: "成功は決定的ではなく、失敗は致命的ではない。大切なのは続ける勇気だ。",
+                author: "Winston Churchill"
+            },
+            {
+                text: "The future belongs to those who believe in the beauty of their dreams.",
+                translation: "未来は、自分の夢の美しさを信じる人のものだ。",
+                author: "Eleanor Roosevelt"
+            },
+            {
+                text: "It does not matter how slowly you go as long as you do not stop.",
+                translation: "止まりさえしなければ、どんなにゆっくりでも進めばよい。",
+                author: "Confucius"
+            },
+            {
+                text: "Believe you can and you're halfway there.",
+                translation: "自分ならできると信じれば、もう半分は達成したようなものだ。",
+                author: "Theodore Roosevelt"
+            }
+        ];
+
+        // Initialize with mock data if empty
+        function initializeMockData() {
+            const routines = getRoutines();
+            if (routines.length === 0) {
+                const mockRoutines = [
+                    { id: Date.now() + 1, title: "朝のストレッチ", display_order: 1, created_at: new Date().toISOString() },
+                    { id: Date.now() + 2, title: "コーヒーを飲む", display_order: 2, created_at: new Date().toISOString() },
+                    { id: Date.now() + 3, title: "ニュースをチェック", display_order: 3, created_at: new Date().toISOString() },
+                    { id: Date.now() + 4, title: "コードレビュー", display_order: 4, created_at: new Date().toISOString() },
+                    { id: Date.now() + 5, title: "筋トレ", display_order: 5, created_at: new Date().toISOString() },
+                    { id: Date.now() + 6, title: "読書", display_order: 6, created_at: new Date().toISOString() }
+                ];
+                saveRoutines(mockRoutines);
+            }
+        }
+
+        // LocalStorage helpers
+        function getRoutines() {
+            const data = localStorage.getItem(STORAGE_KEYS.ROUTINES);
+            return data ? JSON.parse(data) : [];
+        }
+
+        function saveRoutines(routines) {
+            localStorage.setItem(STORAGE_KEYS.ROUTINES, JSON.stringify(routines));
+        }
+
+        function getDailyLogs() {
+            const data = localStorage.getItem(STORAGE_KEYS.DAILY_LOGS);
+            return data ? JSON.parse(data) : {};
+        }
+
+        function saveDailyLogs(logs) {
+            localStorage.setItem(STORAGE_KEYS.DAILY_LOGS, JSON.stringify(logs));
+        }
+
+        function getTodayKey() {
+            return new Date().toISOString().split('T')[0];
+        }
+
+        function getTodayLog() {
+            const logs = getDailyLogs();
+            const today = getTodayKey();
+            if (!logs[today]) {
+                logs[today] = {
+                    date: today,
+                    done_count: 0,
+                    total_routine_count: getRoutines().length,
+                    completed_task_ids: []
+                };
+                saveDailyLogs(logs);
+            }
+            return logs[today];
+        }
+
+        function updateTodayLog(completedIds) {
+            const logs = getDailyLogs();
+            const today = getTodayKey();
+            const routines = getRoutines();
+            logs[today] = {
+                date: today,
+                done_count: completedIds.length,
+                total_routine_count: routines.length,
+                completed_task_ids: completedIds
+            };
+            saveDailyLogs(logs);
+        }
+
+        // ==================== UI Rendering ====================
+        function renderDate() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            document.getElementById('currentDate').textContent = `${year}/${month}/${day}`;
+        }
+
+        function renderQuote() {
+            const quote = QUOTES[Math.floor(Math.random() * QUOTES.length)];
+            document.getElementById('quoteText').textContent = `"${quote.text}"`;
+            document.getElementById('quoteTranslation').textContent = quote.translation;
+            document.getElementById('quoteAuthor').textContent = `- ${quote.author}`;
+        }
+
+        function renderRoutineList() {
+            const routines = getRoutines().sort((a, b) => a.display_order - b.display_order);
+            const todayLog = getTodayLog();
+            const completedIds = todayLog.completed_task_ids || [];
+            
+            const container = document.getElementById('routineList');
+            container.innerHTML = '';
+
+            routines.forEach(routine => {
+                if (!completedIds.includes(routine.id)) {
+                    const item = document.createElement('div');
+                    item.className = 'task-item flex items-center gap-4 bg-zinc-900 p-4 rounded-lg hover:bg-zinc-800 transition';
+                    item.innerHTML = `
+                        <div class="checkbox-custom rounded flex-shrink-0" data-id="${routine.id}"></div>
+                        <span class="text-lg">${routine.title}</span>
+                    `;
+                    container.appendChild(item);
+                }
+            });
+
+            // Add event listeners to checkboxes
+            document.querySelectorAll('.checkbox-custom').forEach(checkbox => {
+                checkbox.addEventListener('click', handleTaskComplete);
+            });
+        }
+
+        function handleTaskComplete(e) {
+            const taskId = parseInt(e.target.dataset.id);
+            const taskElement = e.target.closest('.task-item');
+            
+            // Show "Done!" overlay
+            const overlay = document.getElementById('doneOverlay');
+            overlay.classList.remove('hidden');
+            
+            // Remove task with animation
+            taskElement.classList.add('removing');
+            
+            setTimeout(() => {
+                overlay.classList.add('hidden');
+                taskElement.remove();
+                
+                // Update log
+                const todayLog = getTodayLog();
+                const completedIds = todayLog.completed_task_ids || [];
+                completedIds.push(taskId);
+                updateTodayLog(completedIds);
+            }, 1000);
+        }
+
+        function renderRoutineMasterList() {
+            const routines = getRoutines().sort((a, b) => a.display_order - b.display_order);
+            const container = document.getElementById('routineMasterList');
+            container.innerHTML = '';
+
+            routines.forEach((routine, index) => {
+                const card = document.createElement('div');
+                card.className = 'bg-zinc-900 p-4 rounded-lg flex items-center gap-3 cursor-move hover:bg-zinc-800 transition';
+                card.draggable = true;
+                card.dataset.id = routine.id;
+                card.innerHTML = `
+                    <span class="text-2xl cursor-grab">⋮⋮</span>
+                    <input 
+                        type="text" 
+                        value="${routine.title}" 
+                        class="flex-1 bg-transparent border-none focus:outline-none edit-routine-input"
+                        data-id="${routine.id}"
+                    >
+                    <button class="px-3 py-1 text-sm border border-red-600 rounded hover:bg-red-600/10 transition edit-routine-btn" data-id="${routine.id}">編集</button>
+                    <button class="px-3 py-1 text-sm border border-gray-600 rounded hover:bg-gray-600/10 transition delete-routine-btn" data-id="${routine.id}">削除</button>
+                `;
+                container.appendChild(card);
+
+                // Drag and drop events
+                card.addEventListener('dragstart', handleDragStart);
+                card.addEventListener('dragover', handleDragOver);
+                card.addEventListener('drop', handleDrop);
+                card.addEventListener('dragend', handleDragEnd);
+            });
+
+            // Add event listeners
+            document.querySelectorAll('.edit-routine-btn').forEach(btn => {
+                btn.addEventListener('click', handleEditRoutine);
+            });
+            document.querySelectorAll('.delete-routine-btn').forEach(btn => {
+                btn.addEventListener('click', handleDeleteRoutine);
+            });
+        }
+
+        let draggedElement = null;
+
+        function handleDragStart(e) {
+            draggedElement = e.currentTarget;
+            e.currentTarget.classList.add('dragging');
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+            const afterElement = getDragAfterElement(e.currentTarget.parentElement, e.clientY);
+            const dragging = document.querySelector('.dragging');
+            if (afterElement == null) {
+                e.currentTarget.parentElement.appendChild(dragging);
+            } else {
+                e.currentTarget.parentElement.insertBefore(dragging, afterElement);
+            }
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+        }
+
+        function handleDragEnd(e) {
+            e.currentTarget.classList.remove('dragging');
+            
+            // Update display order
+            const cards = Array.from(document.querySelectorAll('#routineMasterList > div'));
+            const routines = getRoutines();
+            
+            cards.forEach((card, index) => {
+                const id = parseInt(card.dataset.id);
+                const routine = routines.find(r => r.id === id);
+                if (routine) {
+                    routine.display_order = index + 1;
+                }
+            });
+            
+            saveRoutines(routines);
+            renderRoutineList();
+        }
+
+        function getDragAfterElement(container, y) {
+            const draggableElements = [...container.querySelectorAll('div:not(.dragging)')];
+            
+            return draggableElements.reduce((closest, child) => {
+                const box = child.getBoundingClientRect();
+                const offset = y - box.top - box.height / 2;
+                
+                if (offset < 0 && offset > closest.offset) {
+                    return { offset: offset, element: child };
+                } else {
+                    return closest;
+                }
+            }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }
+
+        function handleEditRoutine(e) {
+            const id = parseInt(e.target.dataset.id);
+            const input = document.querySelector(`.edit-routine-input[data-id="${id}"]`);
+            const newTitle = input.value.trim();
+            
+            if (newTitle) {
+                const routines = getRoutines();
+                const routine = routines.find(r => r.id === id);
+                if (routine) {
+                    routine.title = newTitle;
+                    saveRoutines(routines);
+                    renderRoutineList();
+                    alert('更新しました');
+                }
+            }
+        }
+
+        function handleDeleteRoutine(e) {
+            if (confirm('本当に削除しますか?')) {
+                const id = parseInt(e.target.dataset.id);
+                let routines = getRoutines();
+                routines = routines.filter(r => r.id !== id);
+                saveRoutines(routines);
+                renderRoutineMasterList();
+                renderRoutineList();
+            }
+        }
+
+        function handleAddRoutine() {
+            const input = document.getElementById('newRoutineInput');
+            const title = input.value.trim();
+            
+            if (title) {
+                const routines = getRoutines();
+                const maxOrder = routines.length > 0 ? Math.max(...routines.map(r => r.display_order)) : 0;
+                
+                const newRoutine = {
+                    id: Date.now(),
+                    title: title,
+                    display_order: maxOrder + 1,
+                    created_at: new Date().toISOString()
+                };
+                
+                routines.push(newRoutine);
+                saveRoutines(routines);
+                renderRoutineMasterList();
+                renderRoutineList();
+                input.value = '';
+            }
+        }
+
+        // ==================== Analytics ====================
+        let chart = null;
+        let currentPeriod = 'weekly';
+
+        function renderChart(period = 'weekly') {
+            currentPeriod = period;
+            const logs = getDailyLogs();
+            const dates = Object.keys(logs).sort();
+            
+            let filteredDates = dates;
+            if (period === 'weekly') {
+                filteredDates = dates.slice(-7);
+            } else {
+                filteredDates = dates.slice(-365);
+            }
+            
+            const labels = filteredDates.map(date => {
+                const d = new Date(date);
+                return `${d.getMonth() + 1}/${d.getDate()}`;
+            });
+            
+            const data = filteredDates.map(date => logs[date]?.done_count || 0);
+            
+            const ctx = document.getElementById('performanceChart');
+            
+            if (chart) {
+                chart.destroy();
+            }
+            
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Done Count',
+                        data: data,
+                        borderColor: '#dc2626',
+                        backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: '#ffffff',
+                                stepSize: 1
+                            },
+                            grid: {
+                                color: '#333333'
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: '#ffffff'
+                            },
+                            grid: {
+                                color: '#333333'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderAchievementRate() {
+            const logs = getDailyLogs();
+            const dates = Object.keys(logs).sort().slice(-7);
+            
+            let totalDone = 0;
+            let totalRoutines = 0;
+            
+            dates.forEach(date => {
+                const log = logs[date];
+                totalDone += log.done_count || 0;
+                totalRoutines += log.total_routine_count || 0;
+            });
+            
+            const rate = totalRoutines > 0 ? (totalDone / totalRoutines * 100).toFixed(1) : 0;
+            document.getElementById('achievementRate').textContent = `${rate}%`;
+        }
+
+        // ==================== Page Navigation ====================
+        function showPage(pageName) {
+            document.getElementById('homePage').classList.add('hidden');
+            document.getElementById('analystPage').classList.add('hidden');
+            
+            document.getElementById('homeTab').classList.remove('border-red-600');
+            document.getElementById('homeTab').classList.add('border-transparent');
+            document.getElementById('analystTab').classList.remove('border-red-600');
+            document.getElementById('analystTab').classList.add('border-transparent');
+            
+            if (pageName === 'home') {
+                document.getElementById('homePage').classList.remove('hidden');
+                document.getElementById('homeTab').classList.add('border-red-600');
+                document.getElementById('homeTab').classList.remove('border-transparent');
+                renderRoutineList();
+            } else if (pageName === 'analyst') {
+                document.getElementById('analystPage').classList.remove('hidden');
+                document.getElementById('analystTab').classList.add('border-red-600');
+                document.getElementById('analystTab').classList.remove('border-transparent');
+                renderChart(currentPeriod);
+                renderAchievementRate();
+                renderRoutineMasterList();
+            }
+        }
+
+        // ==================== Initialization ====================
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeMockData();
+            renderDate();
+            renderQuote();
+            renderRoutineList();
+            
+            // Event listeners
+            document.getElementById('homeTab').addEventListener('click', () => showPage('home'));
+            document.getElementById('analystTab').addEventListener('click', () => showPage('analyst'));
+            document.getElementById('weeklyBtn').addEventListener('click', () => {
+                document.getElementById('weeklyBtn').classList.add('border-red-600', 'bg-red-600/10');
+                document.getElementById('weeklyBtn').classList.remove('border-gray-600');
+                document.getElementById('yearlyBtn').classList.remove('border-red-600', 'bg-red-600/10');
+                document.getElementById('yearlyBtn').classList.add('border-gray-600');
+                renderChart('weekly');
+            });
+            document.getElementById('yearlyBtn').addEventListener('click', () => {
+                document.getElementById('yearlyBtn').classList.add('border-red-600', 'bg-red-600/10');
+                document.getElementById('yearlyBtn').classList.remove('border-gray-600');
+                document.getElementById('weeklyBtn').classList.remove('border-red-600', 'bg-red-600/10');
+                document.getElementById('weeklyBtn').classList.add('border-gray-600');
+                renderChart('yearly');
+            });
+            document.getElementById('addRoutineBtn').addEventListener('click', handleAddRoutine);
+            document.getElementById('newRoutineInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    handleAddRoutine();
+                }
+            });
+            
+            // Set weekly as default
+            document.getElementById('weeklyBtn').classList.add('border-red-600', 'bg-red-600/10');
+            document.getElementById('weeklyBtn').classList.remove('border-gray-600');
+        });
+    </script>
+</body>
+</html>
